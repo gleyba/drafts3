@@ -1,0 +1,4 @@
+local_repository(
+    name = "flatbuffers",
+    path = "deps/flatbuffers",
+)

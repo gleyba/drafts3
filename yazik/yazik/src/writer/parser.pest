@@ -1,0 +1,60 @@
+alpha = _{ 'a'..'z' | 'A'..'Z' }
+digit = _{ '0'..'9' }
+ws = _{ (" ")* }
+rule_delim = _{"---"}
+
+bool = {"bool"}
+i8 = {"i8"}
+i16 = {"i16"}
+i32 = {"i32"}
+i64 = {"i64"}
+f32 = {"f32"}
+f64 = {"f64"}
+primitive = _{ bool | i8 | i16 | i32 | i64 | f32 | f64 }
+
+string = {"string"}
+date = {"date"}
+binary = {"binary"}
+predefined = _{ string | date | binary }
+
+ident = { (ASCII_ALPHANUMERIC | "_")+ }
+
+nest_call_seq = { (alpha | digit | "." | "_")+ }
+nest_call = { "${" ~ nest_call_seq ~ "}" }
+
+path_str = { (alpha | digit | "/" | "." )+ }
+path = { (path_str | nest_call)+ }
+
+const_def = {
+    ident ~ ws? ~ "=" ~ ws? ~ (path) ~ NEWLINE
+}
+
+consts = {
+    "Consts:" ~ ws? ~ NEWLINE
+    ~ (const_def)+
+    ~ rule_delim
+}
+
+any_seq = { (!(NEWLINE) ~ ANY)+ }
+
+matcher_primitive = { "Matcher(Primitive):" ~ ws? ~ NEWLINE
+    ~ (primitive ~ ws? ~ "=>" ~ ws? ~ any_seq ~ NEWLINE)+
+    ~ rule_delim
+}
+
+matcher_predefined = { "Matcher(Predefined):" ~ ws? ~ NEWLINE
+    ~ (predefined ~ ws? ~ "=>" ~ ws? ~ any_seq ~ NEWLINE)+
+    ~ rule_delim
+}
+
+scheme_variant = _{
+    consts |
+    matcher_primitive |
+    matcher_predefined
+}
+
+scheme = {
+    SOI ~
+    (scheme_variant? ~ NEWLINE)* ~
+    EOI
+}

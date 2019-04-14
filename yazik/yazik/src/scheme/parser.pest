@@ -1,0 +1,98 @@
+WHITESPACE = _{ " " }
+
+alpha = _{ 'a'..'z' | 'A'..'Z' }
+digit = _{ '0'..'9' }
+
+ident = { (ASCII_ALPHANUMERIC)+ }
+
+bool = {"bool"}
+i8 = {"i8"}
+i16 = {"i16"}
+i32 = {"i32"}
+i64 = {"i64"}
+f32 = {"f32"}
+f64 = {"f64"}
+primitive = _{ bool | i8 | i16 | i32 | i64 | f32 | f64 }
+
+string = {"string"}
+date = {"date"}
+binary = {"binary"}
+predefined = _{ string | date | binary }
+
+optional = { "optional<" ~ yazik_type ~ ">" }
+
+list = { "list<" ~ yazik_type ~ ">" }
+
+tuple = { "tuple<" ~ yazik_type ~ ("," ~ yazik_type)* ~ ">" }
+
+variant = { "variant<" ~ yazik_type ~ ("," ~ yazik_type)* ~ ">" }
+
+dictionary = { "dictionary<" ~ yazik_type ~ "," ~ yazik_type ~ ">"  }
+
+param = _{
+    ident ~ ":" ~ yazik_type
+}
+
+params = {
+    (param ~ ("," ~ param)*)?
+}
+
+closure_return_type = { ("()" | yazik_type) }
+
+closure = {
+    "(" ~ params ~ ") -> " ~ closure_return_type
+}
+
+yazik_type = _{
+    primitive |
+    predefined |
+    optional |
+    list |
+    tuple |
+    variant |
+    dictionary |
+    closure |
+    ident
+}
+
+yazik_enum = { ident ~ "=" ~ "enum" ~ "{" ~ NEWLINE
+    ~ (ident ~ ";" ~ NEWLINE)+ ~
+"}" }
+
+
+record_fields = {
+    (ident ~ ":" ~ yazik_type  ~ ";" ~ NEWLINE)+
+}
+
+yazik_record = { ident ~ "=" ~ "record" ~ "{" ~ NEWLINE
+    ~ record_fields ~
+"}" }
+
+
+is_static = { ("static")? }
+
+method_return_type = {
+    (":" ~ yazik_type)?
+}
+
+method = {
+    is_static ~ ident ~ "(" ~ params ~ ")" ~ method_return_type
+}
+
+has_setter = { ("set")? }
+
+property_mods = { ("(" ~ has_setter ~ ")")? }
+
+property = {
+    is_static ~ ident ~ ":" ~ yazik_type ~ property_mods
+}
+
+yazik_interface = { ident ~ "=" ~ "interface" ~ "{" ~ NEWLINE
+    ~ ((method | property)  ~ ";" ~ (NEWLINE)+)+ ~
+"}" }
+
+yazik = {
+    SOI ~
+    ((yazik_enum | yazik_record | yazik_interface)? ~ NEWLINE)* ~
+    EOI
+}

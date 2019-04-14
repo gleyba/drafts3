@@ -1,0 +1,11 @@
+[package]
+name = "yazik-cli"
+version = "0.1.0"
+authors = ["Gleb Kolobkov <gleyba.k@gmail.com>"]
+edition = "2018"
+include = ["src/**/*", "Cargo.toml"]
+
+[dependencies]
+yazik = { path = "../yazik" }
+serde_yaml = "0.8"
+toml = "0.4"

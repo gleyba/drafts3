@@ -1,0 +1,9 @@
+.idea
+yazik/target
+yazik/yazik/target
+bazel-bin
+bazel-genfiles
+bazel-out
+bazel-testlogs
+bazel-yazik
+yazik/.clwb
