@@ -80,23 +80,28 @@ Director = interface {
 "#;
 
 static FBS_YAZIKSPEC: &str = r#"
-Consts:
-fb_scheme_file = scheme/${spec.ns}.fbs
----
-Matcher(Primitive):
-bool => bool
-i8 => byte
-i16 => short
-i32 => int
-i64 => long
-f32 => float
-f64 => double
----
-Matcher(Predefined):
-string => string
-date => I64
-binary => [byte]
----
+Consts = {
+    fb_scheme_file = scheme/${spec.ns}.fbs
+}
+
+Matcher(Primitive) = {
+    Bool => bool
+    I8 => byte
+    I16 => short
+    I32 => int
+    I64 => long
+    F32 => float
+    F64 => double
+}
+
+Matcher(Predefined) = {
+    String => string
+    Date => long
+    Binary => [byte]
+}
+
+Unwrap(Optional<_>) = ${0}
+
 "#;
 
 fn main() {

@@ -9,7 +9,6 @@ use crate::common::spec::*;
 
 use super::scheme::*;
 use crate::scheme::scheme;
-use crate::scheme::scheme::DataType::Primitive;
 use core::borrow::Borrow;
 
 #[derive(Parser)]
@@ -23,6 +22,15 @@ trait ResolveHelper {
 trait Resolver<T> {
     fn resolve(&self, helper: &ResolveHelper) -> ParserResult<T>;
 }
+
+type BoxedTypeUnwrapperResolver = Box<Resolver<TypeUnwrapper>>;
+
+struct MetaAndUnwrapper {
+    meta: TypeMeta,
+    resolver: BoxedTypeUnwrapperResolver,
+}
+
+type MetaAndUnwrapperResult = ParserResult<MetaAndUnwrapper>;
 
 struct NestCallResolver<'a> {
     rule: Pair<'a, Rule>,
@@ -140,8 +148,176 @@ fn parse_consts<'a>(rule: &Pair<'a, Rule>) -> ParserResult<HashMap<String, Const
     Ok(defs)
 }
 
+fn parse_primitive(rule: &Pair<Rule>) -> Option<scheme::Primitive> {
+    let result = match rule.as_rule() {
+        Rule::bool => scheme::Primitive::Bool,
+        Rule::i8 => scheme::Primitive::I8,
+        Rule::i16 => scheme::Primitive::I16,
+        Rule::i32 => scheme::Primitive::I32,
+        Rule::i64 => scheme::Primitive::I64,
+        Rule::f32 => scheme::Primitive::F32,
+        Rule::f64 => scheme::Primitive::F64,
+        _ => return None,
+    };
+    Some(result)
+}
 
-fn parse_primitive_matcher(rule: &Pair<Rule>) -> ParserResult<PrimitiveMatcher> {
+fn parse_predefined(rule: &Pair<Rule>) -> Option<scheme::Predefined> {
+    let result = match rule.as_rule() {
+        Rule::string => scheme::Predefined::String,
+        Rule::date => scheme::Predefined::Date,
+        Rule::binary => scheme::Predefined::Binary,
+        _ => return None,
+    };
+    Some(result)
+}
+
+fn parse_privitive_or_predefined_meta(rule: &Pair<Rule>) -> ParserResult<TypeMeta> {
+    if let Some(primitive) = parse_primitive(rule) {
+        return Ok(TypeMeta::Primitive(Some(primitive)))
+    } else if let Some(predefined) = parse_predefined(rule) {
+        return Ok(TypeMeta::Predefined(Some(predefined)))
+    }
+
+    return rule.as_error()
+}
+
+fn parse_type_meta_non_opt(rule: &Pair<Rule>) -> ParserResult<TypeMeta> {
+    let mut inner_rules = rule.clone().into_inner();
+    let result = match rule.as_rule() {
+        Rule::optional
+            => TypeMeta::Optional(parse_type_meta_from_rules(&mut inner_rules)?.map(Box::new)),
+        Rule::list
+            => TypeMeta::List(parse_type_meta_from_rules(&mut inner_rules)?.map(Box::new)),
+        Rule::tuple
+            => TypeMeta::Tuple(parse_type_metas_from_rules(&mut inner_rules)?),
+        Rule::variant
+            => TypeMeta::Variant(parse_type_metas_from_rules(&mut inner_rules)?),
+        Rule::dictionary
+            => TypeMeta::Dictionary(parse_dictionary_meta_from_rules(&mut inner_rules)?),
+        Rule::closure
+            => TypeMeta::Closure(parse_closure_meta_from_rules(&mut inner_rules)?),
+        Rule::enumt => TypeMeta::Enum,
+        Rule::recordt => TypeMeta::Record,
+        Rule::interfacet => TypeMeta::Interface,
+        _ => return parse_privitive_or_predefined_meta(rule),
+    };
+    Ok(result)
+}
+
+fn parse_type_meta_from_rule(rule: Pair<Rule>) -> ParserResult<Option<TypeMeta>> {
+    let result = match rule.as_rule() {
+        Rule::any_meta => None,
+        _ => Some(parse_type_meta_non_opt(&rule)?),
+    };
+
+    Ok(result)
+}
+
+fn parse_type_metas_from_rules(rules: &mut Pairs<Rule>) -> ParserResult<Option<Vec<TypeMeta>>> {
+    guard!(let Some(first_rule) = rules.next()
+    else { return rules.as_error() });
+
+    let first_meta = match first_rule.as_rule() {
+        Rule::any_meta => return Ok(None),
+        _ => parse_type_meta_non_opt(&first_rule)?,
+    };
+
+    let mut result = vec![first_meta];
+
+    while let Some(cur) = rules.next() {
+        result.push(parse_type_meta_non_opt(&cur)?);
+    }
+
+    Ok(Some(result))
+}
+
+fn parse_type_meta_from_rules(rules: &mut Pairs<Rule>) -> ParserResult<Option<TypeMeta>> {
+    guard!(let Some(meta_rule) = rules.next()
+        else { return rules.as_error() });
+
+    let result = match meta_rule.as_rule() {
+        Rule::any_meta => None,
+        _ => Some(parse_type_meta_non_opt(&meta_rule)?),
+    };
+
+    Ok(result)
+}
+
+fn parse_dictionary_meta_from_rules(rules: &mut Pairs<Rule>) -> ParserResult<Option<Box<(TypeMeta,TypeMeta)>>> {
+    guard!(let Some(key_meta_rule) = rules.next()
+        else { return rules.as_error() });
+
+    let result = match key_meta_rule.as_rule() {
+        Rule::any_meta => None,
+        _ => {
+            let key_meta = parse_privitive_or_predefined_meta(&key_meta_rule)?;
+            guard!(let Some(value_meta_rule) = rules.next()
+                else { return key_meta_rule.as_error() });
+            let value_meta = parse_type_meta_non_opt(&value_meta_rule)?;
+            Some(Box::new((key_meta,value_meta)))
+        },
+    };
+    Ok(result)
+}
+
+fn parse_closure_params(rule: &Pair<Rule>) -> ParserResult<Vec<TypeMeta>> {
+    let mut inner_rules = rule.clone().into_inner();
+    let mut params = Vec::new();
+
+    while let Some(cur) = inner_rules.next() {
+        params.push(parse_type_meta_non_opt(&cur)?);
+    }
+    Ok(params)
+}
+
+fn parse_closure_return(rule: &Pair<Rule>) -> ParserResult<Option<Box<TypeMeta>>> {
+    let mut inner_rules = rule.clone().into_inner();
+    guard!(let Some(return_rule) = rule.clone().into_inner().next()
+            else { return Ok(None) });
+
+    parse_type_meta_non_opt(&return_rule).map(Box::new).map(Some)
+}
+
+fn parse_closure_meta_from_rules(rules: &mut Pairs<Rule>)
+    -> ParserResult<Option<(Vec<TypeMeta>, Option<Box<TypeMeta>>)>> {
+
+    guard!(let Some(params_rule) = rules.next()
+        else { return rules.as_error() });
+
+    let result = match params_rule.as_rule() {
+        Rule::any_meta => None,
+        Rule::closure_params => {
+            guard!(let Some(return_rule) = rules.next()
+                else { return rules.as_error() });
+            Some((
+                parse_closure_params(&params_rule)?,
+                parse_closure_return(&return_rule)?
+            ))
+        },
+        _ => return rules.as_error()
+    };
+    Ok(result)
+}
+
+struct PrimitiveMatcherResolver {
+    primitive_map: HashMap<scheme::Primitive, String>,
+}
+
+impl Resolver<TypeUnwrapper> for PrimitiveMatcherResolver {
+    fn resolve(&self, helper: &ResolveHelper) -> ParserResult<TypeUnwrapper> {
+        let result: HashMap<TypeMeta, Box<TypeUnwrapper>> = self.primitive_map.clone()
+            .drain()
+            .map(|(k,v)| (
+                TypeMeta::Primitive(Some(k)),
+                Box::new(TypeUnwrapper::Plain(v))
+            ))
+            .collect();
+        Ok(TypeUnwrapper::Matcher(result))
+    }
+}
+
+fn parse_primitive_matcher(rule: &Pair<Rule>) -> MetaAndUnwrapperResult {
     use scheme::Primitive;
     let mut matcher = HashMap::new();
     let mut inner_rules = rule.clone().into_inner();
@@ -149,16 +325,8 @@ fn parse_primitive_matcher(rule: &Pair<Rule>) -> ParserResult<PrimitiveMatcher> 
         guard!(let Some(matcher_rule)  = inner_rules.next()
             else { return primitive_type.as_error() });
 
-        let primitive = match primitive_type.as_rule() {
-            Rule::bool => Primitive::Bool,
-            Rule::i8 => Primitive::I8,
-            Rule::i16 => Primitive::I16,
-            Rule::i32 => Primitive::I32,
-            Rule::i64 => Primitive::I64,
-            Rule::f32 => Primitive::F32,
-            Rule::f64 => Primitive::F64,
-            _ => return primitive_type.as_error()
-        };
+        guard!(let Some(primitive) = parse_primitive(&primitive_type)
+            else { return primitive_type.as_error()});
 
         matcher.insert(primitive, matcher_rule.as_str().to_string());
     }
@@ -167,10 +335,31 @@ fn parse_primitive_matcher(rule: &Pair<Rule>) -> ParserResult<PrimitiveMatcher> 
             return rule.as_error()
         }
     }
-    Ok(matcher)
+
+    Ok(MetaAndUnwrapper {
+        meta: TypeMeta::Primitive(None),
+        resolver: Box::new(PrimitiveMatcherResolver{ primitive_map: matcher})
+    })
 }
 
-fn parse_predefined_matcher(rule: &Pair<Rule>) -> ParserResult<PredefinedMatcher> {
+struct PredefinedMatcherResolver {
+    predefined_map: HashMap<scheme::Predefined, String>,
+}
+
+impl Resolver<TypeUnwrapper> for PredefinedMatcherResolver {
+    fn resolve(&self, helper: &ResolveHelper) -> ParserResult<TypeUnwrapper> {
+        let result: HashMap<TypeMeta, Box<TypeUnwrapper>> = self.predefined_map.clone()
+            .drain()
+            .map(|(k,v)| (
+                TypeMeta::Predefined(Some(k)),
+                Box::new(TypeUnwrapper::Plain(v))
+            ))
+            .collect();
+        Ok(TypeUnwrapper::Matcher(result))
+    }
+}
+
+fn parse_predefined_matcher(rule: &Pair<Rule>) -> MetaAndUnwrapperResult {
     use scheme::Predefined;
     let mut matcher = HashMap::new();
     let mut inner_rules = rule.clone().into_inner();
@@ -178,12 +367,8 @@ fn parse_predefined_matcher(rule: &Pair<Rule>) -> ParserResult<PredefinedMatcher
         guard!(let Some(matcher_rule)  = inner_rules.next()
             else { return predefined_type.as_error() });
 
-        let predefined = match predefined_type.as_rule() {
-            Rule::string => Predefined::String,
-            Rule::date => Predefined::Date,
-            Rule::binary => Predefined::Binary,
-            _ => return predefined_type.as_error()
-        };
+        guard!(let Some(predefined) = parse_predefined(&predefined_type)
+            else { return predefined_type.as_error()});
 
         matcher.insert(predefined, matcher_rule.as_str().to_string());
     }
@@ -192,14 +377,26 @@ fn parse_predefined_matcher(rule: &Pair<Rule>) -> ParserResult<PredefinedMatcher
             return rule.as_error()
         }
     }
-    Ok(matcher)
+
+    Ok(MetaAndUnwrapper {
+        meta: TypeMeta::Predefined(None),
+        resolver: Box::new(PredefinedMatcherResolver{ predefined_map: matcher})
+    })
+}
+
+fn parse_unwrap_rule(rule: &Pair<Rule>) -> MetaAndUnwrapperResult {
+    let mut inner_rules = rule.clone().into_inner();
+
+    guard!(let Some(meta) = parse_type_meta_from_rules(&mut inner_rules)?
+        else { return rule.as_error() });
+
+    Err(ParseError::new_raw("unimplemented"))
 }
 
 struct SchemeBuilder<'a> {
     spec: Spec,
     consts: RefCell<HashMap<String, ConstResolver<'a>>>,
-    primitive_matcher:  RefCell<Option<PrimitiveMatcher>>,
-    predefined_matcher: RefCell<Option<PredefinedMatcher>>,
+    unwrapper_resolvers: RefCell<HashMap<TypeMeta, BoxedTypeUnwrapperResolver>>,
 }
 
 impl<'i> SchemeBuilder<'i> {
@@ -208,8 +405,7 @@ impl<'i> SchemeBuilder<'i> {
         SchemeBuilder {
             spec: spec,
             consts: RefCell::new(HashMap::new()),
-            primitive_matcher: RefCell::new(None),
-            predefined_matcher: RefCell::new(None),
+            unwrapper_resolvers: RefCell::new(HashMap::new()),
         }
     }
 
@@ -219,15 +415,13 @@ impl<'i> SchemeBuilder<'i> {
         Ok(())
     }
 
-    fn process_primitive_matcher_rule(&'i self, rule: Pair<'i, Rule>) -> ParserResult<()> {
-        self.primitive_matcher.replace(Some(parse_primitive_matcher(&rule)?));
-        Ok(())
+   fn add_parsed(&'i self, mr_pair: MetaAndUnwrapper) {
+        self.unwrapper_resolvers.borrow_mut().insert(
+            mr_pair.meta,
+            mr_pair.resolver
+        );
     }
 
-    fn process_predefined_matcher_rule(&'i self, rule: Pair<'i, Rule>) -> ParserResult<()> {
-        self.predefined_matcher.replace(Some(parse_predefined_matcher(&rule)?));
-        Ok(())
-    }
 }
 
 impl<'i> ResolveHelper for SchemeBuilder<'i> {
@@ -243,29 +437,32 @@ fn build_scheme(mut root_rules: Pairs<Rule>, spec: Spec) -> ParserResult<Scheme>
     let mut scheme_builder = SchemeBuilder::new(spec);
     for rule in root.clone().into_inner() {
         match rule.as_rule() {
-            Rule::consts => scheme_builder.process_consts(rule)?,
-            Rule::matcher_primitive => scheme_builder.process_primitive_matcher_rule(rule)?,
-            Rule::matcher_predefined => scheme_builder.process_predefined_matcher_rule(rule)?,
+            Rule::consts
+                => scheme_builder.process_consts(rule)?,
+            Rule::matcher_primitive
+                => scheme_builder.add_parsed(parse_primitive_matcher(&rule)?),
+            Rule::matcher_predefined
+                => scheme_builder.add_parsed(parse_predefined_matcher(&rule)?),
+            Rule::unwrap
+                => scheme_builder.add_parsed(parse_unwrap_rule(&rule)?),
             Rule::EOI => (),
             _ => return rule.as_error()
         }
     }
 
     let mut consts = HashMap::new();
-    for (name, rr) in scheme_builder.consts.borrow_mut().drain() {
-        consts.insert(name, rr.resolve(&scheme_builder)?);
+    for (name, rr) in scheme_builder.consts.borrow().iter() {
+        consts.insert(name.clone(), rr.resolve(&scheme_builder)?);
     }
 
-    guard!(let Some(primitives) = scheme_builder.primitive_matcher.borrow().clone()
-        else { return Err(ParseError::new_raw("No primitives")) });
-
-    guard!(let Some(predefined) = scheme_builder.predefined_matcher.borrow().clone()
-        else { return Err(ParseError::new_raw("No predefined")) });
+    let mut unwrappers = HashMap::new();
+    for (meta, rr) in scheme_builder.unwrapper_resolvers.borrow().iter()  {
+        unwrappers.insert(meta.clone(), rr.resolve(&scheme_builder)?);
+    }
 
     let result = Scheme {
         consts: consts,
-        primitives: primitives,
-        predefined: predefined,
+        unwrappers: unwrappers,
     };
 
     Ok(result)

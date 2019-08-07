@@ -21,7 +21,7 @@ impl Primitive {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct Enum {
     pub name: String,
     pub options: Vec<String>,
@@ -53,13 +53,13 @@ impl Predefined {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum DictionaryKeyType {
     Primitive(Primitive),
     Predefined(Predefined),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash, Debug)]
 pub struct Record {
     pub name: String,
     pub fields: Vec<(String,DataType)>,
@@ -68,7 +68,7 @@ pub struct Record {
 
 pub trait TypeTrait{}
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash, Debug)]
 pub enum DataType {
     Primitive(Primitive),
     Predefined(Predefined),
@@ -81,7 +81,7 @@ pub enum DataType {
     Record(String),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash, Debug)]
 pub struct Method {
     pub name: String,
     pub params: Vec<(String, CrossType)>,
@@ -89,7 +89,7 @@ pub struct Method {
     pub is_static: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash, Debug)]
 pub struct Property {
     pub name: String,
     pub yazik_type: CrossType,
@@ -97,7 +97,7 @@ pub struct Property {
     pub is_static: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash, Debug)]
 pub struct Interface {
     pub name: String,
     pub properties: Vec<(String,Property)>,
@@ -105,7 +105,7 @@ pub struct Interface {
     pub hash: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash, Debug)]
 pub enum CrossType {
     Primitive(Primitive),
     Predefined(Predefined),

@@ -37,10 +37,10 @@ params = {
     (param ~ ("," ~ param)*)?
 }
 
-closure_return_type = { ("()" | yazik_type) }
+closure_return_type = { "()" | yazik_type }
 
 closure = {
-    "(" ~ params ~ ") -> " ~ closure_return_type
+    "(" ~ params ~ ")" ~ "->" ~ closure_return_type
 }
 
 yazik_type = _{

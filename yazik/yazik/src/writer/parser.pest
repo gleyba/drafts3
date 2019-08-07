@@ -1,60 +1,96 @@
+WHITESPACE = _{ " " }
+
 alpha = _{ 'a'..'z' | 'A'..'Z' }
 digit = _{ '0'..'9' }
-ws = _{ (" ")* }
 rule_delim = _{"---"}
 
-bool = {"bool"}
-i8 = {"i8"}
-i16 = {"i16"}
-i32 = {"i32"}
-i64 = {"i64"}
-f32 = {"f32"}
-f64 = {"f64"}
+bool = {"Bool"}
+i8 = {"I8"}
+i16 = {"I16"}
+i32 = {"I32"}
+i64 = {"I64"}
+f32 = {"F32"}
+f64 = {"F64"}
 primitive = _{ bool | i8 | i16 | i32 | i64 | f32 | f64 }
 
-string = {"string"}
-date = {"date"}
-binary = {"binary"}
+string = {"String"}
+date = {"Date"}
+binary = {"Binary"}
 predefined = _{ string | date | binary }
 
 ident = { (ASCII_ALPHANUMERIC | "_")+ }
 
 nest_call_seq = { (alpha | digit | "." | "_")+ }
-nest_call = { "${" ~ nest_call_seq ~ "}" }
+nest_call_arg = { digit }
+nest_call = { "${" ~ (nest_call_seq | nest_call_arg) ~ "}" }
 
 path_str = { (alpha | digit | "/" | "." )+ }
 path = { (path_str | nest_call)+ }
 
 const_def = {
-    ident ~ ws? ~ "=" ~ ws? ~ (path) ~ NEWLINE
+    ident ~ "=" ~ path
 }
 
 consts = {
-    "Consts:" ~ ws? ~ NEWLINE
-    ~ (const_def)+
-    ~ rule_delim
+    "Consts" ~ "=" ~ "{" ~ NEWLINE
+    ~ (const_def ~ NEWLINE)+
+    ~ "}"
 }
 
 any_seq = { (!(NEWLINE) ~ ANY)+ }
 
-matcher_primitive = { "Matcher(Primitive):" ~ ws? ~ NEWLINE
-    ~ (primitive ~ ws? ~ "=>" ~ ws? ~ any_seq ~ NEWLINE)+
-    ~ rule_delim
+matcher_primitive = {
+    "Matcher(Primitive)" ~ "=" ~ "{" ~ NEWLINE
+    ~ (primitive ~ "=>" ~ any_seq ~ NEWLINE)+
+    ~ "}"
 }
 
-matcher_predefined = { "Matcher(Predefined):" ~ ws? ~ NEWLINE
-    ~ (predefined ~ ws? ~ "=>" ~ ws? ~ any_seq ~ NEWLINE)+
-    ~ rule_delim
+matcher_predefined = {
+    "Matcher(Predefined)" ~ "=" ~ "{"  ~ NEWLINE
+    ~ (predefined ~ "=>" ~ any_seq ~ NEWLINE)+
+    ~ "}"
+}
+
+any_meta = { "_" }
+meta_or_any = _{ meta | any_meta }
+
+optional = { "Optional<" ~ meta_or_any ~">" }
+list = { "List<" ~ meta_or_any ~">" }
+tuple = { "Tuple<" ~ meta_or_any~ ("," ~ meta)* ~">" }
+variant = { "Variant<" ~ meta_or_any~ ("," ~ meta)* ~">" }
+dictionary = { "Dictionary<" ~ (any_meta | (meta ~ meta)) ~ ">" }
+closure_params = { (meta ~ ("," ~ meta)*)? }
+closure_return = { "()" | meta }
+closure = { "Closure<" ~ (any_meta | ("(" ~ closure_params ~ ")" ~ "->" ~ closure_return) )  ~ ">"}
+enumt = { "Enum"}
+recordt = { "Record" }
+interfacet = { "Interface" }
+
+meta = _{
+    optional |
+    list |
+    tuple |
+    variant |
+    dictionary |
+    closure |
+    enumt |
+    recordt |
+    interfacet
+}
+
+unwrap = {
+    "Unwrap(" ~ meta ~ ")" ~ "=" ~ nest_call
 }
 
 scheme_variant = _{
     consts |
     matcher_primitive |
-    matcher_predefined
+    matcher_predefined |
+    unwrap
 }
 
 scheme = {
     SOI ~
-    (scheme_variant? ~ NEWLINE)* ~
+    (scheme_variant? ~ NEWLINE)+ ~
     EOI
 }
