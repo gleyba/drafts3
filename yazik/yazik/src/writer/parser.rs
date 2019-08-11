@@ -32,11 +32,11 @@ struct MetaAndUnwrapper {
 
 type MetaAndUnwrapperResult = ParserResult<MetaAndUnwrapper>;
 
-struct NestCallResolver<'a> {
+struct PathNestCallResolver<'a> {
     rule: Pair<'a, Rule>,
 }
 
-impl<'i> Resolver<String> for NestCallResolver<'i> {
+impl<'i> Resolver<String> for PathNestCallResolver<'i> {
     fn resolve(&self, helper: &ResolveHelper) -> ParserResult<String> {
         let rule_str = self.rule.as_str();
         if (rule_str.starts_with("spec.")) {
@@ -46,18 +46,18 @@ impl<'i> Resolver<String> for NestCallResolver<'i> {
     }
 }
 
-fn parse_nest_call<'a>(rule: &Pair<'a, Rule>) -> ParserResult<NestCallResolver<'a>> {
+fn parse_path_nest_call<'a>(rule: &Pair<'a, Rule>) -> ParserResult<PathNestCallResolver<'a>> {
     let mut inner_rules = rule.clone().into_inner();
 
     guard!(let Some(def_rule) = inner_rules.next()
         else { return rule.as_error() });
 
-    Ok(NestCallResolver { rule: def_rule })
+    Ok(PathNestCallResolver { rule: def_rule })
 }
 
 enum PathResolverParts<'a> {
     Str(String),
-    Nest(NestCallResolver<'a>),
+    Nest(PathNestCallResolver<'a>),
 }
 
 struct PathResolver<'a> {
@@ -88,12 +88,12 @@ fn parse_path<'a>(rule: &Pair<'a, Rule>) -> ParserResult<PathResolver<'a>> {
     while let Some(cur) = inner_rules.next() {
        match cur.as_rule() {
            Rule::path_str => cur_plain_part += cur.as_str(),
-           Rule::nest_call => {
+           Rule::path_nest_call => {
                if !cur_plain_part.is_empty() {
                    parts.push(PathResolverParts::Str(cur_plain_part));
                    cur_plain_part = String::new();
                }
-               parts.push(PathResolverParts::Nest(parse_nest_call(&cur)?));
+               parts.push(PathResolverParts::Nest(parse_path_nest_call(&cur)?));
            },
            _ =>  return rule.as_error()
        }
@@ -384,13 +384,107 @@ fn parse_predefined_matcher(rule: &Pair<Rule>) -> MetaAndUnwrapperResult {
     })
 }
 
+struct MetaArgUnwrapSeqResolve {
+    value: u8,
+}
+
+impl MetaArgUnwrapSeqResolve {
+    fn new_boxed(value: u8) -> Box<MetaArgUnwrapSeqResolve> {
+        Box::new(MetaArgUnwrapSeqResolve{ value: value })
+    }
+}
+
+impl Resolver<UnwrapSeq> for MetaArgUnwrapSeqResolve {
+    fn resolve(&self, helper: &ResolveHelper) -> ParserResult<UnwrapSeq> {
+        Ok(UnwrapSeq::MetaArg(self.value.clone()))
+    }
+}
+
+fn parse_unwrap_seq_resolver_from_nest_call(rule: Pair<Rule>)
+-> ParserResult<Box<dyn Resolver<UnwrapSeq>>> {
+    let mut inner_rules = rule.clone().into_inner();
+    guard!(let Some(nest_inner) = inner_rules.next()
+        else { return rule.as_error() });
+
+
+    let result: Box<dyn Resolver<UnwrapSeq>> = match nest_inner.as_rule() {
+        Rule::nest_call_arg => {
+            guard!(let Ok(value) = nest_inner.as_str().parse::<u8>()
+                else { return nest_inner.as_error() });
+            MetaArgUnwrapSeqResolve::new_boxed(value)
+        },
+        _ => return nest_inner.as_error()
+    };
+    Ok(result)
+}
+
+struct StringUnwrapSeqResolver {
+    value: String,
+}
+
+impl StringUnwrapSeqResolver {
+    fn new_boxed(value: String) -> Box<StringUnwrapSeqResolver> {
+        Box::new(StringUnwrapSeqResolver{ value: value })
+    }
+}
+
+impl Resolver<UnwrapSeq> for StringUnwrapSeqResolver {
+    fn resolve(&self, helper: &ResolveHelper) -> ParserResult<UnwrapSeq> {
+        Ok(UnwrapSeq::Str(self.value.clone()))
+    }
+}
+
+struct UnwrapSeqResolver {
+    inner: Vec<Box<dyn Resolver<UnwrapSeq>>>,
+}
+
+impl Resolver<TypeUnwrapper> for UnwrapSeqResolver {
+    fn resolve(&self, helper: &ResolveHelper) -> ParserResult<TypeUnwrapper> {
+        let mut result = Vec::new();
+        for rr in self.inner.iter() {
+            result.push(rr.resolve(helper)?);
+        }
+        Ok(TypeUnwrapper::Unwrap(result))
+    }
+}
+
 fn parse_unwrap_rule(rule: &Pair<Rule>) -> MetaAndUnwrapperResult {
     let mut inner_rules = rule.clone().into_inner();
 
     guard!(let Some(meta) = parse_type_meta_from_rules(&mut inner_rules)?
         else { return rule.as_error() });
 
-    Err(ParseError::new_raw("unimplemented"))
+    let mut str_seq = RefCell::new(String::new());
+    let mut inner: RefCell<Vec<Box<dyn Resolver<UnwrapSeq>>>> = RefCell::new(Vec::new());
+
+    let mut check_str_set = || {
+        if !str_seq.borrow().is_empty() {
+            let prev = str_seq.replace(String::new());
+            inner.borrow_mut().push(StringUnwrapSeqResolver::new_boxed(prev));
+        }
+    };
+
+    while let Some(rule) = inner_rules.next() {
+        match rule.as_rule() {
+            Rule::any_seq_ch => {
+                guard!(let Ok(ch) = rule.as_str().parse::<char>()
+                    else { return rule.as_error() });
+                str_seq.borrow_mut().push(ch);
+            },
+            Rule::nest_call => {
+                check_str_set();
+                inner.borrow_mut().push(parse_unwrap_seq_resolver_from_nest_call(rule)?)
+            },
+            _ => return rule.as_error(),
+        }
+    }
+
+    check_str_set();
+
+    Ok(MetaAndUnwrapper{
+        meta: meta,
+        resolver: Box::new(UnwrapSeqResolver { inner: inner.into_inner() } ),
+    })
 }
 
 struct SchemeBuilder<'a> {

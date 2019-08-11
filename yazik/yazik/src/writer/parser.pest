@@ -22,10 +22,11 @@ ident = { (ASCII_ALPHANUMERIC | "_")+ }
 
 nest_call_seq = { (alpha | digit | "." | "_")+ }
 nest_call_arg = { digit }
-nest_call = { "${" ~ (nest_call_seq | nest_call_arg) ~ "}" }
+nest_call = { "${" ~ (nest_call_arg | nest_call_seq) ~ "}" }
 
+path_nest_call = { "${" ~ nest_call_seq ~ "}" }
 path_str = { (alpha | digit | "/" | "." )+ }
-path = { (path_str | nest_call)+ }
+path = { (path_str | path_nest_call)+ }
 
 const_def = {
     ident ~ "=" ~ path
@@ -37,6 +38,7 @@ consts = {
     ~ "}"
 }
 
+any_seq_ch = { !(NEWLINE) ~ ANY }
 any_seq = { (!(NEWLINE) ~ ANY)+ }
 
 matcher_primitive = {
@@ -79,7 +81,7 @@ meta = _{
 }
 
 unwrap = {
-    "Unwrap(" ~ meta ~ ")" ~ "=" ~ nest_call
+    "Unwrap(" ~ meta ~ ")" ~ "=" ~ (nest_call | any_seq_ch)+
 }
 
 scheme_variant = _{

@@ -102,6 +102,7 @@ Matcher(Predefined) = {
 
 Unwrap(Optional<_>) = ${0}
 
+Unwrap(List<_>) = [${0}]
 "#;
 
 fn main() {
