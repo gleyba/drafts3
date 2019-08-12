@@ -84,8 +84,6 @@ Consts = {
     fb_scheme_file = scheme/${spec.ns}.fbs
 }
 
-fb_record_field: Formatter(name,_) = ${name}: ${type_of(0)}
-
 Matcher(Primitive) = {
     Bool => bool
     I8 => byte
@@ -106,14 +104,38 @@ Unwrap(Optional<_>) = ${type_of(0)}
 
 Unwrap(List<_>) = [${type_of(0)}]
 
+fb_record_field: Formatter(name,_) = ${name}: ${type_of(0)}
+
+Unique(Tuple<_>) = {
+    id = ${join("",name_of(_))}Tuple
+    out = ${consts.fb_scheme_file}
+    pattern:
+    <%
+    table ${id} {
+        ${join(";\n",fb_record_field(number(_),_))}
+    }
+    %>
+}
+
+Unique(Variant<_>) = {
+    id = ${join("",name_of(_))}Variant
+    out = ${consts.fb_scheme_file}
+    pattern:
+    <%
+    union ${id} {
+        ${join_not_last(",\n",type_of(_))}
+    }
+    %>
+}
 "#;
 
-//Unique(Tuple<_>) = {
-//    id = ${join("",capitalize(_))}Tuple
+//Unique(Dictionary<_>) = {
+//    id = ${join("",name_of(_))}Dictionary
 //    out = ${consts.fb_scheme_file}
-//    pattern = <%
-//    table ${self.id} {
-//        ${join(";\n",fb_record_field(number(_),_))}
+//    pattern:
+//    <%
+//    struct ${id} {
+//        kv_pairs: [${type_of(Tuple<0,1>)}];
 //    }
 //    %>
 //}
@@ -128,11 +150,11 @@ fn main() {
 //
 //    println!("{}", toml_scheme.unwrap())
 
-    let spec = Spec {
-        ns: String::from("test"),
-    };
+//    let spec = Spec {
+//        ns: String::from("test"),
+//    };
 
-    let writer_spec = writer::parser::parse(FBS_YAZIKSPEC, spec);
+    let writer_spec = writer::parser::parse(FBS_YAZIKSPEC);
     let toml_writer = match writer_spec {
         Ok(writer) => serde_yaml::to_string(&writer),
         Err(e) => panic!("{:?}", e)

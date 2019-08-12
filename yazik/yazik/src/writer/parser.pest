@@ -77,31 +77,47 @@ meta = _{
     interfacet
 }
 
-
+nest_call_any_seq = { (!(NEWLINE) ~ !("${") ~ ANY)+ }
 nest_call_arg = { digit | "_" }
-nest_call_formatter_arg_str = { "\"" ~ any_seq ~ "\"" }
-nest_call_formatter_args = { (nest_call_inner | nest_call_formatter_arg_str )+ }
+nest_call_formatter_arg_str_any_seq = { (!(NEWLINE) ~ !("\"") ~ ANY)+ }
+nest_call_formatter_arg_str = { "\"" ~ nest_call_formatter_arg_str_any_seq* ~ "\"" }
+nest_call_formatter_arg =  _{(nest_call_inner | nest_call_formatter_arg_str )}
+nest_call_formatter_args = { nest_call_formatter_arg ~ ("," ~ nest_call_formatter_arg)* }
 nest_call_formatter = { ident ~ "(" ~ nest_call_formatter_args ~ ")" }
 nest_call_inner = _{ nest_call_formatter | nest_call_arg }
 
 nest_call = { "${" ~ (nest_call_formatter | ident) ~ "}" }
 
-unwrap_seq = { (nest_call | any_seq_ch)+ }
+unwrap_seq = { (nest_call | nest_call_any_seq)+ }
 
-unwrap = {
-    "Unwrap(" ~ meta ~ ")" ~ "=" ~ unwrap_seq
-}
+unwrap = { "Unwrap" ~ "(" ~ meta ~ ")" ~ "=" ~ unwrap_seq }
 
 formatter_arg = { (ident | "_")+ }
 formatter_args = { formatter_arg ~ ("," ~ formatter_arg)* }
 formatter = { ident ~ ":" ~ "Formatter" ~ "(" ~ formatter_args ~ ")" ~ "=" ~ unwrap_seq }
+
+pattern_any_seq_ch = { (!(NEWLINE) ~ !(" ") ~ !("\t")  ~ !("%>") ~ ANY)+ }
+pattern_nl = { NEWLINE }
+pattern_ws = { " " }
+pattern_tab = { "\t" }
+pattern = ${ (nest_call | pattern_nl | pattern_ws | pattern_tab | pattern_any_seq_ch)+ }
+
+unique = {
+    "Unique" ~ "(" ~ meta ~ ")" ~ "=" ~ "{" ~ NEWLINE ~
+        "id" ~ "=" ~ unwrap_seq ~ NEWLINE ~
+        "out" ~ "=" ~ path ~ NEWLINE ~
+        "pattern:" ~ NEWLINE ~
+        "<%" ~ pattern ~ "%>" ~ NEWLINE ~
+    "}"
+}
 
 scheme_variant = _{
     consts |
     matcher_primitive |
     matcher_predefined |
     unwrap |
-    formatter
+    formatter |
+    unique
 }
 
 scheme = {

@@ -3,6 +3,17 @@ use std::collections::HashMap;
 
 use crate::scheme::scheme as meta;
 
+#[derive(Serialize, Deserialize, Clone)]
+pub enum PathParts {
+    Str(String),
+    Nest(String),
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub enum Const {
+    Path(Vec<PathParts>),
+}
+
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum TypeMeta {
     Primitive(Option<meta::Primitive>),
@@ -24,19 +35,15 @@ pub enum MetaArg {
     All,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum UnwrapSeq {
+    NL,
+    WS(u16),
+    TAB,
     Str(String),
     Arg(MetaArg),
     SelfProp(String),
     Formatted(String, Vec<UnwrapSeq>),
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Unique {
-    id: Vec<UnwrapSeq>,
-    out: String,
-    pattern: Vec<UnwrapSeq>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -60,8 +67,15 @@ pub struct Formatter {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct Unique {
+    pub id: Vec<UnwrapSeq>,
+    pub out: Vec<PathParts>,
+    pub pattern: Vec<UnwrapSeq>,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct Scheme {
-    pub consts: HashMap<String, String>,
+    pub consts: HashMap<String, Const>,
     pub formatters: HashMap<String, Formatter>,
     pub unwrappers: HashMap<TypeMeta, TypeUnwrapper>,
 }
