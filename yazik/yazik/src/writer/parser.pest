@@ -50,6 +50,7 @@ matcher_predefined = {
     ~ "}"
 }
 
+number_ref = { digit }
 any_meta = { "_" }
 meta_or_any = _{ meta | any_meta }
 
@@ -66,6 +67,9 @@ recordt = { "Record" }
 interfacet = { "Interface" }
 
 meta = _{
+    number_ref |
+    primitive |
+    predefined |
     optional |
     list |
     tuple |
@@ -77,14 +81,18 @@ meta = _{
     interfacet
 }
 
+nest_call_meta_or_any = { meta | any_meta }
 nest_call_any_seq = { (!(NEWLINE) ~ !("${") ~ ANY)+ }
-nest_call_arg = { digit | "_" }
 nest_call_formatter_arg_str_any_seq = { (!(NEWLINE) ~ !("\"") ~ ANY)+ }
 nest_call_formatter_arg_str = { "\"" ~ nest_call_formatter_arg_str_any_seq* ~ "\"" }
-nest_call_formatter_arg =  _{(nest_call_inner | nest_call_formatter_arg_str )}
+nest_call_formatter_arg =  _{
+    nest_call_formatter |
+    nest_call_meta_or_any |
+    nest_call_formatter_arg_str |
+    ident
+}
 nest_call_formatter_args = { nest_call_formatter_arg ~ ("," ~ nest_call_formatter_arg)* }
 nest_call_formatter = { ident ~ "(" ~ nest_call_formatter_args ~ ")" }
-nest_call_inner = _{ nest_call_formatter | nest_call_arg }
 
 nest_call = { "${" ~ (nest_call_formatter | ident) ~ "}" }
 
@@ -96,7 +104,7 @@ formatter_arg = { (ident | "_")+ }
 formatter_args = { formatter_arg ~ ("," ~ formatter_arg)* }
 formatter = { ident ~ ":" ~ "Formatter" ~ "(" ~ formatter_args ~ ")" ~ "=" ~ unwrap_seq }
 
-pattern_any_seq_ch = { (!(NEWLINE) ~ !(" ") ~ !("\t")  ~ !("%>") ~ ANY)+ }
+pattern_any_seq_ch = { (!(NEWLINE) ~ !(" ") ~ !("\t") ~ !("${") ~ !("%>") ~ ANY)+ }
 pattern_nl = { NEWLINE }
 pattern_ws = { " " }
 pattern_tab = { "\t" }

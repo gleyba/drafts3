@@ -13,8 +13,6 @@ extern crate serde_derive;
 extern crate serde;
 extern crate serde_value;
 
-use crate::common::spec::Spec;
-
 mod common;
 pub mod scheme;
 pub mod writer;
@@ -79,7 +77,8 @@ Director = interface {
 }
 "#;
 
-static FBS_YAZIKSPEC: &str = r#"
+static FBS_YAZIKSPEC: &str =
+r#"
 Consts = {
     fb_scheme_file = scheme/${spec.ns}.fbs
 }
@@ -127,18 +126,43 @@ Unique(Variant<_>) = {
     }
     %>
 }
+
+Unique(Dictionary<_>) = {
+    id = ${join("",name_of(_))}Dictionary
+    out = ${consts.fb_scheme_file}
+    pattern:
+    <%
+    struct ${id} {
+        kv_pairs: [${type_of(Tuple<0,1>)}];
+    }
+    %>
+}
+
+Unique(Enum) = {
+    id = ${name}
+    out = ${consts.fb_scheme_file}
+    pattern:
+    <%
+    enum ${id} {
+        ${join_not_last(",\n",params)}
+    }
+    %>
+}
+
+Unique(Record) = {
+    id = ${name}
+    out = ${consts.fb_scheme_file}
+    pattern:
+    <%
+    table ${id} {
+        ${join(";\n",fb_record_field(fields_names,fields_types))}
+    }
+    %>
+}
+
 "#;
 
-//Unique(Dictionary<_>) = {
-//    id = ${join("",name_of(_))}Dictionary
-//    out = ${consts.fb_scheme_file}
-//    pattern:
-//    <%
-//    struct ${id} {
-//        kv_pairs: [${type_of(Tuple<0,1>)}];
-//    }
-//    %>
-//}
+
 
 fn main() {
 //    let scheme = yazik::parser::parse(TEST_SCHEME);

@@ -152,6 +152,12 @@ fn parse_privitive_or_predefined_meta(rule: &Pair<Rule>) -> ParserResult<TypeMet
 fn parse_type_meta_non_opt(rule: &Pair<Rule>) -> ParserResult<TypeMeta> {
     let mut inner_rules = rule.clone().into_inner();
     let result = match rule.as_rule() {
+        Rule::number_ref => {
+            guard!(let Ok(value) = rule.as_str().parse::<u8>()
+                else { return rule.as_error() });
+
+            TypeMeta::NumberRef(value)
+        },
         Rule::optional
             => TypeMeta::Optional(parse_type_meta_from_rules(&mut inner_rules)?.map(Box::new)),
         Rule::list
@@ -297,7 +303,7 @@ fn parse_primitive_matcher(rule: &Pair<Rule>) -> MetaAndUnwrapperResult {
         matcher.insert(primitive, matcher_rule.as_str().to_string());
     }
     for primitive in Primitive::iter() {
-        if (!matcher.contains_key(primitive)) {
+        if !matcher.contains_key(primitive) {
             return rule.as_error()
         }
     }
@@ -339,7 +345,7 @@ fn parse_predefined_matcher(rule: &Pair<Rule>) -> MetaAndUnwrapperResult {
         matcher.insert(predefined, matcher_rule.as_str().to_string());
     }
     for predefined in Predefined::iter() {
-        if (!matcher.contains_key(predefined)) {
+        if !matcher.contains_key(predefined) {
             return rule.as_error()
         }
     }
@@ -367,14 +373,15 @@ impl Resolver<UnwrapSeq> for MetaArgResolver {
 }
 
 fn parse_meta_arg(rule: Pair<Rule>) -> ParserResult<Box<dyn Resolver<UnwrapSeq>>> {
-    let value = rule.as_str().to_owned();
-    if value == "_" {
-        return Ok(MetaArgResolver::new_boxed(MetaArg::All))
-    }
-    guard!(let Ok(value) = rule.as_str().parse::<u8>()
+    guard!(let Some(meta_rule) = rule.clone().into_inner().next()
         else { return rule.as_error() });
 
-    Ok(MetaArgResolver::new_boxed(MetaArg::Number(value)))
+    let result = match meta_rule.as_rule() {
+        Rule::any_meta => MetaArgResolver::new_boxed(MetaArg::All),
+        _ => MetaArgResolver::new_boxed(MetaArg::Meta(parse_type_meta_non_opt(&meta_rule)?)),
+    };
+
+    Ok(result)
 }
 
 struct SeqResolver {
@@ -397,9 +404,6 @@ impl SeqResolver {
     fn new_boxed_str(value: &str) -> Box<SeqResolver> {
         Self::new_boxed(UnwrapSeq::Str(value.to_owned()))
     }
-    fn new_boxed_string(value: String) -> Box<SeqResolver> {
-        Self::new_boxed(UnwrapSeq::Str(value))
-    }
     fn new_boxed_self_prop(value: &str) -> Box<SeqResolver> {
         Self::new_boxed(UnwrapSeq::SelfProp(value.to_owned()))
     }
@@ -416,15 +420,14 @@ fn parse_formatted_args(rule: Pair<Rule>)
     let mut inner_rules = rule.clone().into_inner();
     let mut result = Vec::new();
     while let Some(rule) = inner_rules.next() {
-        match rule.as_rule() {
-            Rule::nest_call_formatter
-                => result.push(parse_formatted_seq(rule)?),
-            Rule::nest_call_arg
-                => result.push(parse_meta_arg(rule)?),
-            Rule::nest_call_formatter_arg_str
-                => result.push(SeqResolver::new_boxed_str(rule.as_str())),
+        let resolver = match rule.as_rule() {
+            Rule::nest_call_formatter => parse_formatted_seq(rule)?,
+            Rule::nest_call_meta_or_any => parse_meta_arg(rule)?,
+            Rule::ident => SeqResolver::new_boxed_self_prop(rule.as_str()),
+            Rule::nest_call_formatter_arg_str => SeqResolver::new_boxed_str(rule.as_str()),
             _ => return rule.as_error(),
-        }
+        };
+        result.push(resolver);
     }
     Ok(result)
 }
@@ -515,15 +518,15 @@ fn parse_unwrap_seq(rule: Pair<Rule>) -> ParserResult<UnwrapSeqResolver> {
                 }
                 match rule_type {
                     Rule::pattern_any_seq_ch
-                    => inner.push(SeqResolver::new_boxed_str(rule.as_str())),
+                        => inner.push(SeqResolver::new_boxed_str(rule.as_str())),
                     Rule::nest_call_any_seq
-                    => inner.push(SeqResolver::new_boxed_str(rule.as_str())),
+                        => inner.push(SeqResolver::new_boxed_str(rule.as_str())),
                     Rule::pattern_nl
-                    => inner.push(SeqResolver::new_boxed_nl()),
+                        => inner.push(SeqResolver::new_boxed_nl()),
                     Rule::pattern_tab
-                    => inner.push(SeqResolver::new_boxed_tab()),
+                        => inner.push(SeqResolver::new_boxed_tab()),
                     Rule::nest_call
-                    => inner.push(parse_unwrap_seq_resolver_from_nest_call(rule)?),
+                        => inner.push(parse_unwrap_seq_resolver_from_nest_call(rule)?),
                     _ => return rule.as_error(),
                 }
             }
@@ -678,7 +681,7 @@ fn build_scheme(mut root_rules: Pairs<Rule>) -> ParserResult<Scheme> {
     guard!(let Some(root) = root_rules.next()
         else { return root_rules.as_error() });
 
-    let mut scheme_builder = SchemeBuilder::new();
+    let scheme_builder = SchemeBuilder::new();
     for rule in root.clone().into_inner() {
         match rule.as_rule() {
             Rule::consts

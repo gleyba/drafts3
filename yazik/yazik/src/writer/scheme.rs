@@ -16,6 +16,7 @@ pub enum Const {
 
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum TypeMeta {
+    NumberRef(u8),
     Primitive(Option<meta::Primitive>),
     Predefined(Option<meta::Predefined>),
     Optional(Option<Box<TypeMeta>>),
@@ -31,7 +32,7 @@ pub enum TypeMeta {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub enum MetaArg {
-    Number(u8),
+    Meta(TypeMeta),
     All,
 }
 
