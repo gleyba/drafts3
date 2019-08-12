@@ -10,6 +10,7 @@ use crate::common::spec::*;
 use super::scheme::*;
 use crate::scheme::scheme;
 use core::borrow::Borrow;
+use crate::writer::scheme::TypeUnwrapper::Unwrap;
 
 #[derive(Parser)]
 #[grammar = "writer/parser.pest"]
@@ -384,20 +385,117 @@ fn parse_predefined_matcher(rule: &Pair<Rule>) -> MetaAndUnwrapperResult {
     })
 }
 
-struct MetaArgUnwrapSeqResolve {
-    value: u8,
+struct MetaArgResolver {
+    value: MetaArg,
 }
 
-impl MetaArgUnwrapSeqResolve {
-    fn new_boxed(value: u8) -> Box<MetaArgUnwrapSeqResolve> {
-        Box::new(MetaArgUnwrapSeqResolve{ value: value })
+impl MetaArgResolver {
+    fn new_boxed(value: MetaArg) -> Box<MetaArgResolver> {
+        Box::new(MetaArgResolver{ value: value })
     }
 }
 
-impl Resolver<UnwrapSeq> for MetaArgUnwrapSeqResolve {
+impl Resolver<UnwrapSeq> for MetaArgResolver {
     fn resolve(&self, helper: &ResolveHelper) -> ParserResult<UnwrapSeq> {
-        Ok(UnwrapSeq::MetaArg(self.value.clone()))
+        Ok(UnwrapSeq::Arg(self.value.clone()))
     }
+}
+
+fn parse_meta_arg(rule: Pair<Rule>) -> ParserResult<Box<dyn Resolver<UnwrapSeq>>> {
+    let value = rule.as_str().to_owned();
+    if value == "_" {
+        return Ok(MetaArgResolver::new_boxed(MetaArg::All))
+    }
+    guard!(let Ok(value) = rule.as_str().parse::<u8>()
+        else { return rule.as_error() });
+
+    Ok(MetaArgResolver::new_boxed(MetaArg::Number(value)))
+}
+
+struct StringResolver {
+    value: String,
+}
+
+impl StringResolver {
+    fn new_boxed(value: String) -> Box<StringResolver> {
+        Box::new(StringResolver{ value: value })
+    }
+}
+
+impl Resolver<UnwrapSeq> for StringResolver {
+    fn resolve(&self, helper: &ResolveHelper) -> ParserResult<UnwrapSeq> {
+        Ok(UnwrapSeq::Str(self.value.clone()))
+    }
+}
+
+struct SelfPropResolver {
+    value: String,
+}
+
+impl SelfPropResolver {
+    fn new_boxed(value: String) -> Box<SelfPropResolver> {
+        Box::new(SelfPropResolver{ value: value })
+    }
+}
+
+impl Resolver<UnwrapSeq> for SelfPropResolver {
+    fn resolve(&self, helper: &ResolveHelper) -> ParserResult<UnwrapSeq> {
+        Ok(UnwrapSeq::SelfProp(self.value.clone()))
+    }
+}
+
+
+fn parse_formatted_args(rule: Pair<Rule>)
+-> ParserResult<Vec<Box<dyn Resolver<UnwrapSeq>>>> {
+    let mut inner_rules = rule.clone().into_inner();
+    let mut result = Vec::new();
+    while let Some(rule) = inner_rules.next() {
+        match rule.as_rule() {
+            Rule::nest_call_formatter
+                => result.push(parse_formatted_seq(rule)?),
+            Rule::nest_call_arg
+                => result.push(parse_meta_arg(rule)?),
+            Rule::nest_call_formatter_arg_str
+                => result.push(StringResolver::new_boxed(rule.as_str().to_owned())),
+            _ => return rule.as_error(),
+        }
+    }
+    Ok(result)
+}
+
+struct FormattedResolver {
+    name: String,
+    args_resolver: Vec<Box<dyn Resolver<UnwrapSeq>>>,
+}
+
+impl Resolver<UnwrapSeq> for FormattedResolver {
+    fn resolve(&self, helper: &ResolveHelper) -> ParserResult<UnwrapSeq> {
+        let mut args = Vec::new();
+        for rr in self.args_resolver.iter() {
+            args.push(rr.resolve(helper)?);
+        };
+
+        Ok(UnwrapSeq::Formatted(
+            self.name.clone(),
+            args
+        ))
+    }
+}
+
+fn parse_formatted_seq(rule: Pair<Rule>)
+-> ParserResult<Box<dyn Resolver<UnwrapSeq>>> {
+    let mut inner_rules = rule.clone().into_inner();
+
+    guard!(let Some(name) = inner_rules.next()
+        else { return rule.as_error() });
+
+    guard!(let Some(args) = inner_rules.next()
+        else { return rule.as_error() });
+
+    Ok(Box::new(FormattedResolver{
+        name: name.as_str().to_owned(),
+        args_resolver: parse_formatted_args(args)?
+    }))
 }
 
 fn parse_unwrap_seq_resolver_from_nest_call(rule: Pair<Rule>)
@@ -408,30 +506,11 @@ fn parse_unwrap_seq_resolver_from_nest_call(rule: Pair<Rule>)
 
 
     let result: Box<dyn Resolver<UnwrapSeq>> = match nest_inner.as_rule() {
-        Rule::nest_call_arg => {
-            guard!(let Ok(value) = nest_inner.as_str().parse::<u8>()
-                else { return nest_inner.as_error() });
-            MetaArgUnwrapSeqResolve::new_boxed(value)
-        },
-        _ => return nest_inner.as_error()
+        Rule::nest_call_formatter => parse_formatted_seq(nest_inner)?,
+        Rule::ident => SelfPropResolver::new_boxed(nest_inner.as_str().to_owned()),
+        _ => return nest_inner.as_error(),
     };
     Ok(result)
-}
-
-struct StringUnwrapSeqResolver {
-    value: String,
-}
-
-impl StringUnwrapSeqResolver {
-    fn new_boxed(value: String) -> Box<StringUnwrapSeqResolver> {
-        Box::new(StringUnwrapSeqResolver{ value: value })
-    }
-}
-
-impl Resolver<UnwrapSeq> for StringUnwrapSeqResolver {
-    fn resolve(&self, helper: &ResolveHelper) -> ParserResult<UnwrapSeq> {
-        Ok(UnwrapSeq::Str(self.value.clone()))
-    }
 }
 
 struct UnwrapSeqResolver {
@@ -440,27 +519,29 @@ struct UnwrapSeqResolver {
 
 impl Resolver<TypeUnwrapper> for UnwrapSeqResolver {
     fn resolve(&self, helper: &ResolveHelper) -> ParserResult<TypeUnwrapper> {
+        Ok(TypeUnwrapper::Unwrap(self::Resolver::<Vec<UnwrapSeq>>::resolve(self,helper)?))
+    }
+}
+
+impl Resolver<Vec<UnwrapSeq>> for UnwrapSeqResolver {
+    fn resolve(&self, helper: &ResolveHelper) -> ParserResult<Vec<UnwrapSeq>> {
         let mut result = Vec::new();
         for rr in self.inner.iter() {
             result.push(rr.resolve(helper)?);
         }
-        Ok(TypeUnwrapper::Unwrap(result))
+        Ok(result)
     }
 }
 
-fn parse_unwrap_rule(rule: &Pair<Rule>) -> MetaAndUnwrapperResult {
+fn parse_unwrap_seq(rule: Pair<Rule>) -> ParserResult<UnwrapSeqResolver> {
     let mut inner_rules = rule.clone().into_inner();
-
-    guard!(let Some(meta) = parse_type_meta_from_rules(&mut inner_rules)?
-        else { return rule.as_error() });
-
     let mut str_seq = RefCell::new(String::new());
     let mut inner: RefCell<Vec<Box<dyn Resolver<UnwrapSeq>>>> = RefCell::new(Vec::new());
 
     let mut check_str_set = || {
         if !str_seq.borrow().is_empty() {
             let prev = str_seq.replace(String::new());
-            inner.borrow_mut().push(StringUnwrapSeqResolver::new_boxed(prev));
+            inner.borrow_mut().push(StringResolver::new_boxed(prev));
         }
     };
 
@@ -481,15 +562,59 @@ fn parse_unwrap_rule(rule: &Pair<Rule>) -> MetaAndUnwrapperResult {
 
     check_str_set();
 
+    Ok(UnwrapSeqResolver {inner: inner.into_inner()} )
+}
+
+
+fn parse_unwrap_rule(rule: &Pair<Rule>) -> MetaAndUnwrapperResult {
+    let mut inner_rules = rule.clone().into_inner();
+
+    guard!(let Some(meta) = parse_type_meta_from_rules(&mut inner_rules)?
+        else { return rule.as_error() });
+
+    guard!(let Some(unwrap) = inner_rules.next()
+        else { return rule.as_error() });
+
     Ok(MetaAndUnwrapper{
         meta: meta,
-        resolver: Box::new(UnwrapSeqResolver { inner: inner.into_inner() } ),
+        resolver: parse_unwrap_seq(unwrap).map(Box::new)?,
     })
+}
+
+fn parse_formatter_args(rule: Pair<Rule>) -> ParserResult<Vec<FormatterArg>> {
+    let mut inner_rules = rule.clone().into_inner();
+    let mut result = Vec::new();
+
+    while let Some(rule) = inner_rules.next() {
+        let arg_str = rule.as_str().to_owned();
+        if arg_str == "_" {
+            result.push(FormatterArg::MetaArg);
+        } else {
+            result.push(FormatterArg::Str(arg_str));
+        }
+    }
+
+    Ok(result)
+}
+
+struct FormatterResolver {
+    args: Vec<FormatterArg>,
+    unwrap: UnwrapSeqResolver,
+}
+
+impl Resolver<Formatter> for FormatterResolver {
+    fn resolve(&self, helper: &ResolveHelper) -> ParserResult<Formatter> {
+        Ok(Formatter{
+            args: self.args.clone(),
+            unwrap: self.unwrap.resolve(helper)?,
+        })
+    }
 }
 
 struct SchemeBuilder<'a> {
     spec: Spec,
     consts: RefCell<HashMap<String, ConstResolver<'a>>>,
+    formatters: RefCell<HashMap<String, FormatterResolver>>,
     unwrapper_resolvers: RefCell<HashMap<TypeMeta, BoxedTypeUnwrapperResolver>>,
 }
 
@@ -499,6 +624,7 @@ impl<'i> SchemeBuilder<'i> {
         SchemeBuilder {
             spec: spec,
             consts: RefCell::new(HashMap::new()),
+            formatters: RefCell::new(HashMap::new()),
             unwrapper_resolvers: RefCell::new(HashMap::new()),
         }
     }
@@ -509,7 +635,27 @@ impl<'i> SchemeBuilder<'i> {
         Ok(())
     }
 
-   fn add_parsed(&'i self, mr_pair: MetaAndUnwrapper) {
+    fn process_formatter(&'i self, rule: Pair<'i, Rule>) -> ParserResult<()> {
+        let mut inner_rules = rule.clone().into_inner();
+
+        guard!(let Some(name) = inner_rules.next()
+            else { return rule.as_error() });
+        guard!(let Some(args) = inner_rules.next()
+            else { return rule.as_error() });
+        guard!(let Some(unwrap) = inner_rules.next()
+            else { return rule.as_error() });
+
+        self.formatters.borrow_mut().insert(
+            name.as_str().to_owned(),
+            FormatterResolver {
+                args: parse_formatter_args(args)?,
+                unwrap: parse_unwrap_seq(unwrap)?,
+            }
+        );
+        Ok(())
+    }
+
+    fn add_parsed(&'i self, mr_pair: MetaAndUnwrapper) {
         self.unwrapper_resolvers.borrow_mut().insert(
             mr_pair.meta,
             mr_pair.resolver
@@ -533,6 +679,8 @@ fn build_scheme(mut root_rules: Pairs<Rule>, spec: Spec) -> ParserResult<Scheme>
         match rule.as_rule() {
             Rule::consts
                 => scheme_builder.process_consts(rule)?,
+            Rule::formatter
+                => scheme_builder.process_formatter(rule)?,
             Rule::matcher_primitive
                 => scheme_builder.add_parsed(parse_primitive_matcher(&rule)?),
             Rule::matcher_predefined
@@ -549,6 +697,11 @@ fn build_scheme(mut root_rules: Pairs<Rule>, spec: Spec) -> ParserResult<Scheme>
         consts.insert(name.clone(), rr.resolve(&scheme_builder)?);
     }
 
+    let mut formatters = HashMap::new();
+    for (name, rr) in scheme_builder.formatters.borrow().iter() {
+        formatters.insert(name.clone(), rr.resolve(&scheme_builder)?);
+    }
+
     let mut unwrappers = HashMap::new();
     for (meta, rr) in scheme_builder.unwrapper_resolvers.borrow().iter()  {
         unwrappers.insert(meta.clone(), rr.resolve(&scheme_builder)?);
@@ -556,6 +709,7 @@ fn build_scheme(mut root_rules: Pairs<Rule>, spec: Spec) -> ParserResult<Scheme>
 
     let result = Scheme {
         consts: consts,
+        formatters: formatters,
         unwrappers: unwrappers,
     };
 

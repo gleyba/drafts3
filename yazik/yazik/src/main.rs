@@ -84,6 +84,8 @@ Consts = {
     fb_scheme_file = scheme/${spec.ns}.fbs
 }
 
+fb_record_field: Formatter(name,_) = ${name}: ${type_of(0)}
+
 Matcher(Primitive) = {
     Bool => bool
     I8 => byte
@@ -100,10 +102,21 @@ Matcher(Predefined) = {
     Binary => [byte]
 }
 
-Unwrap(Optional<_>) = ${0}
+Unwrap(Optional<_>) = ${type_of(0)}
 
-Unwrap(List<_>) = [${0}]
+Unwrap(List<_>) = [${type_of(0)}]
+
 "#;
+
+//Unique(Tuple<_>) = {
+//    id = ${join("",capitalize(_))}Tuple
+//    out = ${consts.fb_scheme_file}
+//    pattern = <%
+//    table ${self.id} {
+//        ${join(";\n",fb_record_field(number(_),_))}
+//    }
+//    %>
+//}
 
 fn main() {
 //    let scheme = yazik::parser::parse(TEST_SCHEME);
