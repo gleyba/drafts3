@@ -3,13 +3,13 @@ use std::collections::HashMap;
 
 use crate::scheme::scheme as meta;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum PathParts {
     Str(String),
     Nest(String),
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Const {
     Path(Vec<PathParts>),
 }
@@ -30,13 +30,13 @@ pub enum TypeMeta {
     Interface,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MetaArg {
     Meta(TypeMeta),
     All,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum UnwrapSeq {
     NL,
     WS(u16),
@@ -47,7 +47,7 @@ pub enum UnwrapSeq {
     Formatted(String, Vec<UnwrapSeq>),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum TypeUnwrapper {
     Plain(String),
     Matcher(HashMap<TypeMeta, Box<TypeUnwrapper>>),
@@ -55,26 +55,26 @@ pub enum TypeUnwrapper {
     Unique(Unique),
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum FormatterArg {
     Str(String),
     MetaArg,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Formatter {
     pub args: Vec<FormatterArg>,
     pub unwrap: Vec<UnwrapSeq>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Unique {
     pub id: Vec<UnwrapSeq>,
     pub out: Vec<PathParts>,
     pub pattern: Vec<UnwrapSeq>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Scheme {
     pub consts: HashMap<String, Const>,
     pub formatters: HashMap<String, Formatter>,

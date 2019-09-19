@@ -16,8 +16,9 @@ extern crate serde_value;
 mod common;
 pub mod scheme;
 pub mod writer;
+pub mod generator;
 
-static TEST_SCHEME: &str = r#"
+static DATA: &str = r#"
 Color = enum {
     Red;
     Green;
@@ -77,7 +78,7 @@ Director = interface {
 }
 "#;
 
-static FBS_YAZIKSPEC: &str =
+static PATTERN: &str =
 r#"
 Consts = {
     fb_scheme_file = scheme/${spec.ns}.fbs
@@ -144,7 +145,7 @@ Unique(Enum) = {
     pattern:
     <%
     enum ${id} {
-        ${join_not_last(",\n",params)}
+        ${join_not_last(",\n",options)}
     }
     %>
 }
@@ -165,23 +166,36 @@ Unique(Record) = {
 
 
 fn main() {
-//    let scheme = yazik::parser::parse(TEST_SCHEME);
-//
+    let data = match scheme::parser::parse(DATA) {
+        Ok(data) => data,
+        Err(e) => panic!("{:?}", e)
+    };
+    let pattern = match writer::parser::parse(PATTERN) {
+        Ok(pattern) => pattern,
+        Err(e) => panic!("{:?}", e)
+    };
+    let spec = common::spec::Spec {
+        ns: String::from("test"),
+    };
+
+    let out = match generator::gen::resolve(spec, data, pattern) {
+        Ok(out) => out,
+        Err(e) => panic!("{:?}", e)
+    };
+
 //    let toml_scheme = match scheme {
 //        Ok(scheme) => serde_yaml::to_string(&scheme),
 //        Err(e) => panic!("{:?}", e)
 //    };
-//
-//    println!("{}", toml_scheme.unwrap())
 
-//    let spec = Spec {
-//        ns: String::from("test"),
+//    println!("{}", toml_scheme.unwrap());
+
+
+
+//    let writer_spec = writer::parser::parse(FBS_YAZIKSPEC);
+//    let toml_writer = match writer_spec {
+//        Ok(writer) => serde_yaml::to_string(&writer),
+//        Err(e) => panic!("{:?}", e)
 //    };
-
-    let writer_spec = writer::parser::parse(FBS_YAZIKSPEC);
-    let toml_writer = match writer_spec {
-        Ok(writer) => serde_yaml::to_string(&writer),
-        Err(e) => panic!("{:?}", e)
-    };
-    println!("{}", toml_writer.unwrap())
+//    println!("{}", toml_writer.unwrap());
 }

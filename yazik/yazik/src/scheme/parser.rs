@@ -14,14 +14,17 @@ use super::scheme::*;
 
 fn parse_primitive(rule: &Pair<Rule>) -> ParserResult<Primitive> {
     use Primitive::*;
-    let result = match rule.as_str() {
-        "bool" => Bool,
-        "i8" => I8,
-        "i16" => I16,
-        "i32" => I32,
-        "i64" => I64,
-        "f32" => F32,
-        "f64" => F64,
+    guard!(let Some(inner) = rule.clone().into_inner().next()
+        else { return rule.as_error() });
+
+    let result = match inner.as_rule() {
+        Rule::bool => Bool,
+        Rule::i8 => I8,
+        Rule::i16 => I16,
+        Rule::i32 => I32,
+        Rule::i64 => I64,
+        Rule::f32 => F32,
+        Rule::f64 => F64,
         _ => return rule.as_error(),
     };
     Ok(result)
@@ -29,10 +32,13 @@ fn parse_primitive(rule: &Pair<Rule>) -> ParserResult<Primitive> {
 
 fn parse_predefined(rule: &Pair<Rule>) -> ParserResult<Predefined> {
     use Predefined::*;
-    let result = match rule.as_str() {
-        "string" => String,
-        "date" => Date,
-        "binary" => Binary,
+    guard!(let Some(inner) = rule.clone().into_inner().next()
+        else { return rule.as_error() });
+
+    let result = match inner.as_rule() {
+        Rule::string => String,
+        Rule::date => Date,
+        Rule::binary => Binary,
         _ => return rule.as_error(),
     };
     Ok(result)
