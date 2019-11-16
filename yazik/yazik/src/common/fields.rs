@@ -14,12 +14,29 @@ use serde_value::Value;
 
 use std::fmt;
 use std::marker::PhantomData;
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use std::cell::RefCell;
 use std::any::Any;
 
 use super::{YError, YResult};
 use serde::export::fmt::Debug;
+
+pub struct ValueWrapper<T> where T: Serialize {
+    data: T,
+    values: BTreeMap<Value, Value>,
+}
+
+impl<T> ValueWrapper<T> where T: Serialize {
+    pub fn new(data: T) -> YResult<Self> {
+        guard!(let Ok(Value::Map(mut map)) = serde_value::to_value(&data)
+        else { return Err(YError::new_raw("expected a struct")) });
+        Ok(ValueWrapper {
+            data: data,
+            values: map,
+        })
+    }
+
+}
 
 
 pub struct FieldMap<T> where T: Serialize {
@@ -34,6 +51,7 @@ impl<T> FieldMap<T> where T: Serialize {
             values: RefCell::new(HashMap::new()),
         }
     }
+
 }
 
 impl<T> Serialize for FieldMap<T> where T: Serialize {
@@ -103,21 +121,21 @@ impl<V> fmt::Debug for FieldMap<V> where V: Serialize + Debug {
     }
 }
 
-pub fn get_field_by_name<T, R>(data: T, field: &str) -> YResult<R>
-where
-    T: Serialize,
-    R: DeserializeOwned,
-{
-    guard!(let Ok(Value::Map(mut map)) = serde_value::to_value(data)
-        else { return Err(YError::new_raw("expected a struct")) });
-
-    let key = Value::String(field.to_owned());
-
-    guard!(let Some(value) = map.remove(&key)
-        else { return Err(YError::new_raw("no such field")) });
-
-    match R::deserialize(value) {
-        Ok(r) => Ok(r),
-        Err(_) => Err(YError::new_raw("wrong type?")),
-    }
-}
+//pub fn get_field_by_name<T, R>(data: T, field: &str) -> YResult<R>
+//where
+//    T: Serialize,
+//    R: DeserializeOwned,
+//{
+//    guard!(let Ok(Value::Map(mut map)) = serde_value::to_value(data)
+//        else { return Err(YError::new_raw("expected a struct")) });
+//
+//    let key = Value::String(field.to_owned());
+//
+//    guard!(let Some(value) = map.remove(&key)
+//        else { return Err(YError::new_raw("no such field")) });
+//
+//    match R::deserialize(value) {
+//        Ok(r) => Ok(r),
+//        Err(_) => Err(YError::new_raw("wrong type?")),
+//    }
+//}

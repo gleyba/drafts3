@@ -9,7 +9,6 @@ use crate::common::parser::*;
 
 use super::scheme::*;
 use crate::scheme::scheme;
-use crate::common::fields::FieldMap;
 
 #[derive(Parser)]
 #[grammar = "writer/parser.pest"]
@@ -719,7 +718,7 @@ fn build_scheme(mut root_rules: Pairs<Rule>) -> YResult<Scheme> {
     }
 
     let result = Scheme {
-        consts: FieldMap::new(consts),
+        consts: consts,
         formatters: formatters,
         unwrappers: unwrappers,
     };

@@ -2,7 +2,6 @@ use crate::scheme::scheme as data;
 use crate::writer::scheme as pattern;
 use crate::common::spec::*;
 use crate::common::parser::*;
-use crate::common::fields::FieldMap;
 use std::collections::HashMap;
 
 use super::out::*;

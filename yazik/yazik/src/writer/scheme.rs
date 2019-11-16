@@ -1,7 +1,6 @@
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 
-use crate::common::fields::FieldMap;
 use crate::scheme::scheme as meta;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -77,7 +76,7 @@ pub struct Unique {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Scheme {
-    pub consts: FieldMap<Const>,
+    pub consts: HashMap<String, Const>,
     pub formatters: HashMap<String, Formatter>,
     pub unwrappers: HashMap<TypeMeta, TypeUnwrapper>,
 }
