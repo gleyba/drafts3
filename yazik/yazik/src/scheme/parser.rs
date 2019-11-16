@@ -9,10 +9,11 @@ use pest::iterators::{Pair, Pairs};
 #[grammar = "scheme/parser.pest"]
 struct SchemeParser;
 
+use crate::common::*;
 use crate::common::parser::*;
 use super::scheme::*;
 
-fn parse_primitive(rule: &Pair<Rule>) -> ParserResult<Primitive> {
+fn parse_primitive(rule: &Pair<Rule>) -> YResult<Primitive> {
     use Primitive::*;
     guard!(let Some(inner) = rule.clone().into_inner().next()
         else { return rule.as_error() });
@@ -30,7 +31,7 @@ fn parse_primitive(rule: &Pair<Rule>) -> ParserResult<Primitive> {
     Ok(result)
 }
 
-fn parse_predefined(rule: &Pair<Rule>) -> ParserResult<Predefined> {
+fn parse_predefined(rule: &Pair<Rule>) -> YResult<Predefined> {
     use Predefined::*;
     guard!(let Some(inner) = rule.clone().into_inner().next()
         else { return rule.as_error() });
@@ -44,7 +45,7 @@ fn parse_predefined(rule: &Pair<Rule>) -> ParserResult<Predefined> {
     Ok(result)
 }
 
-fn parse_enum(rule: &Pair<Rule>) -> ParserResult<Enum> {
+fn parse_enum(rule: &Pair<Rule>) -> YResult<Enum> {
     let mut inner_rules = rule.clone().into_inner();
 
     guard!(let Some(name_rule) = inner_rules.next()
@@ -66,7 +67,7 @@ fn parse_enum(rule: &Pair<Rule>) -> ParserResult<Enum> {
 }
 
 trait Resolver<T> {
-    fn resolve(&self) -> ParserResult<T>;
+    fn resolve(&self) -> YResult<T>;
 }
 
 enum CustomRef {
@@ -76,7 +77,7 @@ enum CustomRef {
 }
 
 trait CustomRefsRepo {
-    fn get_custom_ref(&self, rule: &Pair<Rule>) ->  ParserResult<CustomRef>;
+    fn get_custom_ref(&self, rule: &Pair<Rule>) ->  YResult<CustomRef>;
 }
 
 type DictionaryType<T> = (DictionaryKeyType, Box<T>);
@@ -86,27 +87,27 @@ type ClosureType<T> = (Vec<(String,T)>, ReturnType<T>);
 
 trait TypeResolverTyped<T> {
     fn get_rule(&self) -> Pair<Rule>;
-    fn resolve_impl(&self, rule: &Pair<Rule>) -> ParserResult<T>;
+    fn resolve_impl(&self, rule: &Pair<Rule>) -> YResult<T>;
 
-    fn parse_inner(&self, rule: &Pair<Rule>) -> ParserResult<T> {
+    fn parse_inner(&self, rule: &Pair<Rule>) -> YResult<T> {
         guard!(let Some(inner) = rule.clone().into_inner().next()
             else { return rule.as_error() });
 
         self.resolve_impl(&inner)
     }
 
-    fn parse_inner_boxed(&self, rule: &Pair<Rule>) -> ParserResult<Box<T>> {
+    fn parse_inner_boxed(&self, rule: &Pair<Rule>) -> YResult<Box<T>> {
         self.parse_inner(rule).map(Box::new)
     }
 
-    fn parse_vec(&self, rule: &Pair<Rule>) -> ParserResult<Vec<T>> {
+    fn parse_vec(&self, rule: &Pair<Rule>) -> YResult<Vec<T>> {
         rule.clone()
             .into_inner()
             .map(|r| self.resolve_impl(&r))
             .collect()
     }
 
-    fn parse_dictionary(&self, rule: &Pair<Rule>) -> ParserResult<DictionaryType<T>> {
+    fn parse_dictionary(&self, rule: &Pair<Rule>) -> YResult<DictionaryType<T>> {
         use DictionaryKeyType::*;
         let mut inner_rules = rule.clone().into_inner();
 
@@ -126,7 +127,7 @@ trait TypeResolverTyped<T> {
         Ok((key, Box::new(value)))
     }
 
-    fn parse_params(&self, rule: &Pair<Rule>) -> ParserResult<ParamsType<T>> {
+    fn parse_params(&self, rule: &Pair<Rule>) -> YResult<ParamsType<T>> {
         let mut params = vec![];
         let mut params_rules = rule.clone().into_inner();
         while let Some(cur) = params_rules.next() {
@@ -142,7 +143,7 @@ trait TypeResolverTyped<T> {
     }
 
 
-    fn parse_return_type(&self, rule: &Pair<Rule>) -> ParserResult<ReturnType<T>> {
+    fn parse_return_type(&self, rule: &Pair<Rule>) -> YResult<ReturnType<T>> {
         guard!(let Some(return_type_rule) = rule.clone().into_inner().next()
             else { return Ok(None) });
 
@@ -152,7 +153,7 @@ trait TypeResolverTyped<T> {
     }
 
 
-    fn parse_closure(&self, rule: &Pair<Rule>) -> ParserResult<ClosureType<T>> {
+    fn parse_closure(&self, rule: &Pair<Rule>) -> YResult<ClosureType<T>> {
         let mut inner_rules = rule.clone().into_inner();
 
         let params = match inner_rules.next() {
@@ -190,7 +191,7 @@ impl <'i>TypeResolverTyped<DataType> for TypeResolver<'i, DataType> {
         self.rule.clone()
     }
 
-    fn resolve_impl(&self, rule: &Pair<Rule>) -> ParserResult<DataType> {
+    fn resolve_impl(&self, rule: &Pair<Rule>) -> YResult<DataType> {
         use DataType::*;
         let result = match rule.as_rule() {
             Rule::primitive => Primitive(parse_primitive(rule)?),
@@ -217,7 +218,7 @@ type ParamsResolversVec<'a, T> = Vec<ParamType<'a, T>>;
 fn parse_params_resolvers<'i, T>(
     rule: &Pair<'i, Rule>,
     repo: &'i CustomRefsRepo
-) -> ParserResult<ParamsResolversVec<'i, T>> {
+) -> YResult<ParamsResolversVec<'i, T>> {
     let mut inner_rules = rule.clone().into_inner();
 
     let mut fields_resolvers = vec![];
@@ -239,7 +240,7 @@ fn parse_params_resolvers<'i, T>(
 
 
 impl <'i>Resolver<DataType> for TypeResolver<'i, DataType> {
-    fn resolve(&self) -> ParserResult<DataType> {
+    fn resolve(&self) -> YResult<DataType> {
         self.resolve_impl(&self.get_rule())
     }
 }
@@ -253,7 +254,7 @@ struct RecordResolver<'a> {
 
 impl <'i>RecordResolver<'i> {
 
-    fn create(rule: Pair<'i, Rule>, repo: &'i CustomRefsRepo) -> ParserResult<RecordResolver<'i>> {
+    fn create(rule: Pair<'i, Rule>, repo: &'i CustomRefsRepo) -> YResult<RecordResolver<'i>> {
         let mut inner_rules = rule.clone().into_inner();
 
         guard!(let Some(name_rule) = inner_rules.next()
@@ -275,10 +276,10 @@ impl <'i>RecordResolver<'i> {
 }
 
 impl <'i>Resolver<Record> for RecordResolver<'i> {
-    fn resolve(&self) -> ParserResult<Record> {
-        let fields: ParserResult<Vec<(String, DataType)>> = self.fields_resolvers
+    fn resolve(&self) -> YResult<Record> {
+        let fields: YResult<Vec<(String, DataType)>> = self.fields_resolvers
             .iter()
-            .map (|(name, resolver)| -> ParserResult<(String, DataType)> {
+            .map (|(name, resolver)| -> YResult<(String, DataType)> {
                 let dt = resolver.resolve()?;
                 Ok((name.clone(), dt))
             })
@@ -298,7 +299,7 @@ impl <'i>TypeResolverTyped<CrossType> for TypeResolver<'i, CrossType> {
         self.rule.clone()
     }
 
-    fn resolve_impl(&self, rule: &Pair<Rule>) -> ParserResult<CrossType> {
+    fn resolve_impl(&self, rule: &Pair<Rule>) -> YResult<CrossType> {
         use CrossType::*;
         let result = match rule.as_rule() {
             Rule::primitive => Primitive(parse_primitive(rule)?),
@@ -321,13 +322,13 @@ impl <'i>TypeResolverTyped<CrossType> for TypeResolver<'i, CrossType> {
 }
 
 impl <'i>Resolver<CrossType> for TypeResolver<'i, CrossType> {
-    fn resolve(&self) -> ParserResult<CrossType> {
+    fn resolve(&self) -> YResult<CrossType> {
         self.resolve_impl(&self.get_rule())
     }
 }
 
 impl <'i>Resolver<Property> for TypeResolver<'i, Property> {
-    fn resolve(&self) -> ParserResult<Property> {
+    fn resolve(&self) -> YResult<Property> {
         let mut inner_rules = self.rule.clone().into_inner();
         guard!(let Some(is_static_rule) = inner_rules.next()
             else { return self.rule.as_error() });
@@ -368,7 +369,7 @@ impl <'i>Resolver<Property> for TypeResolver<'i, Property> {
 }
 
 impl <'i> TypeResolver<'i, Method> {
-    fn parse_return_type(&self, rule: &Pair<'i, Rule>) -> ParserResult<Option<CrossType>> {
+    fn parse_return_type(&self, rule: &Pair<'i, Rule>) -> YResult<Option<CrossType>> {
         guard!(let Some(return_type_rule) = rule.clone().into_inner().next()
             else { return Ok(None) });
 
@@ -382,7 +383,7 @@ impl <'i> TypeResolver<'i, Method> {
 }
 
 impl <'i>Resolver<Method> for TypeResolver<'i, Method> {
-    fn resolve(&self) -> ParserResult<Method> {
+    fn resolve(&self) -> YResult<Method> {
         let mut inner_rules = self.rule.clone().into_inner();
 
         guard!(let Some(is_static_rule) = inner_rules.next()
@@ -428,7 +429,7 @@ struct InterfaceResolver<'a> {
 }
 
 impl <'i>InterfaceResolver<'i> {
-    fn create(rule: Pair<'i, Rule>, repo: &'i CustomRefsRepo) -> ParserResult<InterfaceResolver<'i>> {
+    fn create(rule: Pair<'i, Rule>, repo: &'i CustomRefsRepo) -> YResult<InterfaceResolver<'i>> {
         let mut inner_rules = rule.clone().into_inner();
 
         guard!(let Some(name_rule) = inner_rules.next()
@@ -470,7 +471,7 @@ impl <'i>InterfaceResolver<'i> {
 }
 
 impl <'i>Resolver<Interface> for InterfaceResolver<'i> {
-    fn resolve(&self) -> ParserResult<Interface> {
+    fn resolve(&self) -> YResult<Interface> {
         let mut properties = vec![];
         for pr in self.protperties_resolvers.iter() {
             let property = pr.resolve()?;
@@ -502,7 +503,7 @@ struct SchemeBuilder<'a> {
 }
 
 impl <'i>CustomRefsRepo for SchemeBuilder<'i> {
-    fn get_custom_ref(&self, rule: &Pair<Rule>) -> ParserResult<CustomRef> {
+    fn get_custom_ref(&self, rule: &Pair<Rule>) -> YResult<CustomRef> {
         use CustomRef::*;
         let ident = rule.as_str().to_string();
         let result = if self.enums.borrow().contains_key(&ident) {
@@ -528,7 +529,7 @@ impl <'i>SchemeBuilder<'i> {
         }
     }
 
-    fn process_enum_rule(&'i self, rule: Pair<'i, Rule>) -> ParserResult<()> {
+    fn process_enum_rule(&'i self, rule: Pair<'i, Rule>) -> YResult<()> {
         let enum_val = parse_enum(&rule)?;
         self.enums.borrow_mut().insert(
             enum_val.name.clone(),
@@ -537,7 +538,7 @@ impl <'i>SchemeBuilder<'i> {
         Ok(())
     }
 
-    fn process_record_rule(&'i self, rule: Pair<'i, Rule>) -> ParserResult<()> {
+    fn process_record_rule(&'i self, rule: Pair<'i, Rule>) -> YResult<()> {
         let record_resolver = RecordResolver::create(rule, self)?;
         self.records_resolvers.borrow_mut().insert(
             record_resolver.name.clone(),
@@ -546,7 +547,7 @@ impl <'i>SchemeBuilder<'i> {
         Ok(())
     }
 
-    fn process_interface_rule(&'i self, rule: Pair<'i, Rule>) -> ParserResult<()> {
+    fn process_interface_rule(&'i self, rule: Pair<'i, Rule>) -> YResult<()> {
         let interface_resolver = InterfaceResolver::create(rule, self)?;
         self.interface_resolvers.borrow_mut().insert(
             interface_resolver.name.clone(),
@@ -557,7 +558,7 @@ impl <'i>SchemeBuilder<'i> {
 
 }
 
-fn build_scheme(mut root_rules: Pairs<Rule>)  -> ParserResult<Scheme> {
+fn build_scheme(mut root_rules: Pairs<Rule>)  -> YResult<Scheme> {
     guard!(let Some(yazik) = root_rules.next()
         else { return root_rules.as_error() });
 
@@ -593,11 +594,11 @@ fn build_scheme(mut root_rules: Pairs<Rule>)  -> ParserResult<Scheme> {
     Ok(result)
 }
 
-pub fn parse(data: &str) -> ParserResult<Scheme>  {
+pub fn parse(data: &str) -> YResult<Scheme>  {
     let parse_result = SchemeParser::parse(Rule::yazik, data);
     let root_rules = match parse_result {
         Ok(rules) => rules,
-        Err(e) => return Err(ParseError::new_from_pest_error(e))
+        Err(e) => return Err(YError::new_from_pest_error(e))
     };
 
     build_scheme(root_rules)

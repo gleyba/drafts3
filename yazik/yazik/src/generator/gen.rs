@@ -2,13 +2,13 @@ use crate::scheme::scheme as data;
 use crate::writer::scheme as pattern;
 use crate::common::spec::*;
 use crate::common::parser::*;
+use crate::common::fields::FieldMap;
 use std::collections::HashMap;
 
 use super::out::*;
 use super::{GenError, GenResult};
 use super::out_file_builder::{OutFileBuilder, OutFilesBuilder};
 use std::cell::RefCell;
-
 
 struct Generator {
     spec: Spec,
@@ -30,6 +30,8 @@ impl Generator {
 
     fn unwrap_path_nest(&self, nest: &str, to: &mut String) -> GenResult<()> {
         if nest.starts_with("consts.") {
+            let slice = &nest[7..];
+            println!("{:?}", slice);
 
         }
         Err(GenError::CantParsePath(nest.to_owned()))
